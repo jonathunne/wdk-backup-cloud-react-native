@@ -105,17 +105,8 @@ export class ICloudProvider implements CloudProvider {
   async download(): Promise<CloudEncryptionKeyFile | null> {
     await this.assertAvailable();
 
-    let fileExists: boolean;
-    try {
-      fileExists = await CloudStorage.exists(
-        this.filePath,
-        CloudStorageScope.AppData,
-      );
-    } catch (cause) {
-      throw this.mapError(cause, "Failed to check iCloud file existence");
-    }
-
-    if (!fileExists) return null;
+    const available = await this.isFileAvailable();
+    if (!available) return null;
 
     let raw: string;
     try {
@@ -134,17 +125,8 @@ export class ICloudProvider implements CloudProvider {
   async delete(): Promise<void> {
     await this.assertAvailable();
 
-    let fileExists: boolean;
-    try {
-      fileExists = await CloudStorage.exists(
-        this.filePath,
-        CloudStorageScope.AppData,
-      );
-    } catch (cause) {
-      throw this.mapError(cause, "Failed to check iCloud file existence");
-    }
-
-    if (!fileExists) return;
+    const available = await this.isFileAvailable();
+    if (!available) return;
 
     try {
       await CloudStorage.unlink(this.filePath, CloudStorageScope.AppData);
@@ -167,10 +149,7 @@ export class ICloudProvider implements CloudProvider {
       const available = await CloudStorage.isCloudAvailable();
       if (!available) return false;
 
-      return await CloudStorage.exists(
-        this.filePath,
-        CloudStorageScope.AppData,
-      );
+      return await this.isFileAvailable();
     } catch {
       return false;
     }
@@ -179,6 +158,40 @@ export class ICloudProvider implements CloudProvider {
   // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * iCloud files not yet downloaded to the device appear as placeholder files
+   * named `.{filename}.icloud`. This converts a path to its placeholder form.
+   */
+  private getPlaceholderPath(filePath: string): string {
+    const lastSlash = filePath.lastIndexOf("/");
+    if (lastSlash === -1) return `.${filePath}.icloud`;
+    const dir = filePath.substring(0, lastSlash + 1);
+    const name = filePath.substring(lastSlash + 1);
+    return `${dir}.${name}.icloud`;
+  }
+
+  /**
+   * Check if the backup file is available — either downloaded locally or
+   * present as an iCloud `.icloud` placeholder waiting to be downloaded.
+   */
+  private async isFileAvailable(): Promise<boolean> {
+    try {
+      const directExists = await CloudStorage.exists(
+        this.filePath,
+        CloudStorageScope.AppData,
+      );
+      if (directExists) return true;
+
+      const placeholderExists = await CloudStorage.exists(
+        this.getPlaceholderPath(this.filePath),
+        CloudStorageScope.AppData,
+      );
+      return placeholderExists;
+    } catch {
+      return false;
+    }
+  }
 
   /** Throws CloudUnavailableError or CloudAuthError if iCloud isn't ready. */
   private async assertAvailable(): Promise<void> {

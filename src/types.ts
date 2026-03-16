@@ -30,7 +30,10 @@ export interface CloudProvider {
    * Store `encryptedKey` in the provider's cloud storage.
    * If a backup already exists, it MUST be overwritten.
    */
-  upload(encryptedKey: string, metadata: Record<string, unknown>): Promise<CloudEncryptionKeyFile | null>;
+  upload(
+    encryptedKey: string,
+    metadata: Record<string, unknown>,
+  ): Promise<CloudEncryptionKeyFile | null>;
 
   /**
    * Retrieve the stored encrypted key and metadata.

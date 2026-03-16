@@ -13,6 +13,7 @@ import type { CloudEncryptionKeyFile } from '../types';
 
 const ENCRYPTED_KEY = 'encrypted_master_key_hex';
 const DEFAULT_PATH = 'wallet_backup_key.json';
+const PLACEHOLDER_PATH = `.${DEFAULT_PATH}.icloud`;
 const METADATA = { version: 1 };
 
 const VALID_PAYLOAD: CloudEncryptionKeyFile = {
@@ -143,13 +144,29 @@ describe('ICloudProvider.download', () => {
     expect(result!.version).toBe(1);
   });
 
-  it('returns null when no backup file exists', async () => {
+  it('returns null when neither file nor .icloud placeholder exists', async () => {
     makeAvailable();
     cloudStorageMock.exists.mockResolvedValue(false);
 
     const result = await new ICloudProvider().download();
     expect(result).toBeNull();
     expect(cloudStorageMock.readFile).not.toHaveBeenCalled();
+  });
+
+  it('downloads backup when only .icloud placeholder exists', async () => {
+    makeAvailable();
+    cloudStorageMock.exists.mockImplementation((path: string) =>
+      Promise.resolve(path === PLACEHOLDER_PATH),
+    );
+    cloudStorageMock.readFile.mockResolvedValue(JSON.stringify(VALID_PAYLOAD));
+
+    const result = await new ICloudProvider().download();
+    expect(result).not.toBeNull();
+    expect(result!.encryptionKey).toBe(ENCRYPTED_KEY);
+    expect(cloudStorageMock.readFile).toHaveBeenCalledWith(
+      DEFAULT_PATH,
+      CloudStorageScope.AppData,
+    );
   });
 
   it('throws CloudStorageError on invalid JSON in file', async () => {
@@ -209,13 +226,28 @@ describe('ICloudProvider.delete', () => {
     );
   });
 
-  it('is idempotent — does nothing when file does not exist', async () => {
+  it('is idempotent — does nothing when neither file nor .icloud placeholder exists', async () => {
     makeAvailable();
     cloudStorageMock.exists.mockResolvedValue(false);
 
     await new ICloudProvider().delete();
 
     expect(cloudStorageMock.unlink).not.toHaveBeenCalled();
+  });
+
+  it('calls unlink when only .icloud placeholder exists', async () => {
+    makeAvailable();
+    cloudStorageMock.exists.mockImplementation((path: string) =>
+      Promise.resolve(path === PLACEHOLDER_PATH),
+    );
+    cloudStorageMock.unlink.mockResolvedValue(undefined);
+
+    await new ICloudProvider().delete();
+
+    expect(cloudStorageMock.unlink).toHaveBeenCalledWith(
+      DEFAULT_PATH,
+      CloudStorageScope.AppData,
+    );
   });
 
   it('throws CloudStorageError if unlink fails', async () => {
@@ -273,7 +305,15 @@ describe('ICloudProvider.exists', () => {
     await expect(new ICloudProvider().exists()).resolves.toBe(false);
   });
 
-  it('returns false when file does not exist', async () => {
+  it('returns true when only .icloud placeholder exists', async () => {
+    cloudStorageMock.isCloudAvailable.mockResolvedValue(true);
+    cloudStorageMock.exists.mockImplementation((path: string) =>
+      Promise.resolve(path === PLACEHOLDER_PATH),
+    );
+    await expect(new ICloudProvider().exists()).resolves.toBe(true);
+  });
+
+  it('returns false when neither file nor .icloud placeholder exists', async () => {
     cloudStorageMock.isCloudAvailable.mockResolvedValue(true);
     cloudStorageMock.exists.mockResolvedValue(false);
     await expect(new ICloudProvider().exists()).resolves.toBe(false);
