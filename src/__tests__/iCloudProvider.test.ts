@@ -136,12 +136,42 @@ describe('ICloudProvider.download', () => {
   it('returns CloudEncryptionKeyFile for an existing backup', async () => {
     makeAvailable();
     cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
     cloudStorageMock.readFile.mockResolvedValue(JSON.stringify(VALID_PAYLOAD));
 
     const result = await new ICloudProvider().download();
     expect(result).not.toBeNull();
     expect(result!.encryptionKey).toBe(ENCRYPTED_KEY);
     expect(result!.version).toBe(1);
+  });
+
+  it('calls triggerSync before reading the file', async () => {
+    makeAvailable();
+    cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
+    cloudStorageMock.readFile.mockResolvedValue(JSON.stringify(VALID_PAYLOAD));
+
+    await new ICloudProvider().download();
+
+    expect(cloudStorageMock.triggerSync).toHaveBeenCalledWith(
+      DEFAULT_PATH,
+      CloudStorageScope.AppData,
+    );
+    expect(cloudStorageMock.readFile).toHaveBeenCalledWith(
+      DEFAULT_PATH,
+      CloudStorageScope.AppData,
+    );
+  });
+
+  it('succeeds even if triggerSync fails', async () => {
+    makeAvailable();
+    cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockRejectedValue(new Error('sync not needed'));
+    cloudStorageMock.readFile.mockResolvedValue(JSON.stringify(VALID_PAYLOAD));
+
+    const result = await new ICloudProvider().download();
+    expect(result).not.toBeNull();
+    expect(result!.encryptionKey).toBe(ENCRYPTED_KEY);
   });
 
   it('returns null when neither file nor .icloud placeholder exists', async () => {
@@ -151,6 +181,7 @@ describe('ICloudProvider.download', () => {
     const result = await new ICloudProvider().download();
     expect(result).toBeNull();
     expect(cloudStorageMock.readFile).not.toHaveBeenCalled();
+    expect(cloudStorageMock.triggerSync).not.toHaveBeenCalled();
   });
 
   it('downloads backup when only .icloud placeholder exists', async () => {
@@ -158,20 +189,49 @@ describe('ICloudProvider.download', () => {
     cloudStorageMock.exists.mockImplementation((path: string) =>
       Promise.resolve(path === PLACEHOLDER_PATH),
     );
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
     cloudStorageMock.readFile.mockResolvedValue(JSON.stringify(VALID_PAYLOAD));
 
     const result = await new ICloudProvider().download();
     expect(result).not.toBeNull();
     expect(result!.encryptionKey).toBe(ENCRYPTED_KEY);
+    expect(cloudStorageMock.triggerSync).toHaveBeenCalledWith(
+      DEFAULT_PATH,
+      CloudStorageScope.AppData,
+    );
     expect(cloudStorageMock.readFile).toHaveBeenCalledWith(
       DEFAULT_PATH,
       CloudStorageScope.AppData,
     );
   });
 
+  it('retries readFile when it fails initially then succeeds', async () => {
+    jest.useFakeTimers();
+    makeAvailable();
+    cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
+    cloudStorageMock.readFile
+      .mockRejectedValueOnce(new Error('file not ready'))
+      .mockRejectedValueOnce(new Error('file not ready'))
+      .mockResolvedValueOnce(JSON.stringify(VALID_PAYLOAD));
+
+    const downloadPromise = new ICloudProvider().download();
+
+    // Advance through retry delays
+    await jest.advanceTimersByTimeAsync(1000);
+    await jest.advanceTimersByTimeAsync(1000);
+
+    const result = await downloadPromise;
+    expect(result).not.toBeNull();
+    expect(result!.encryptionKey).toBe(ENCRYPTED_KEY);
+    expect(cloudStorageMock.readFile).toHaveBeenCalledTimes(3);
+    jest.useRealTimers();
+  });
+
   it('throws CloudStorageError on invalid JSON in file', async () => {
     makeAvailable();
     cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
     cloudStorageMock.readFile.mockResolvedValue('not json {{');
 
     await expect(new ICloudProvider().download()).rejects.toBeInstanceOf(
@@ -182,6 +242,7 @@ describe('ICloudProvider.download', () => {
   it('throws CloudStorageError on payload with wrong shape', async () => {
     makeAvailable();
     cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
     cloudStorageMock.readFile.mockResolvedValue(JSON.stringify({ version: 2 }));
 
     await expect(new ICloudProvider().download()).rejects.toBeInstanceOf(
@@ -189,14 +250,74 @@ describe('ICloudProvider.download', () => {
     );
   });
 
-  it('throws CloudAuthError when user not signed in during read', async () => {
+  it('throws CloudAuthError when readFile always fails with auth error', async () => {
+    jest.useFakeTimers();
     makeAvailable();
     cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
     cloudStorageMock.readFile.mockRejectedValue(new Error('no account'));
 
-    await expect(new ICloudProvider().download()).rejects.toBeInstanceOf(
-      CloudAuthError,
-    );
+    const resultPromise = new ICloudProvider().download().catch((e: unknown) => e);
+    await jest.runAllTimersAsync();
+    const error = await resultPromise;
+    expect(error).toBeInstanceOf(CloudAuthError);
+    jest.useRealTimers();
+  });
+
+  it('throws CloudStorageError after all retry attempts are exhausted', async () => {
+    jest.useFakeTimers();
+    makeAvailable();
+    cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
+    cloudStorageMock.readFile.mockRejectedValue(new Error('I/O error'));
+
+    const resultPromise = new ICloudProvider().download().catch((e: unknown) => e);
+    await jest.runAllTimersAsync();
+    const error = await resultPromise;
+    expect(error).toBeInstanceOf(CloudStorageError);
+    expect(cloudStorageMock.readFile).toHaveBeenCalledTimes(10);
+    jest.useRealTimers();
+  });
+
+  it('respects custom maxSyncRetries from config', async () => {
+    jest.useFakeTimers();
+    makeAvailable();
+    cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
+    cloudStorageMock.readFile.mockRejectedValue(new Error('I/O error'));
+
+    const provider = new ICloudProvider({ maxSyncRetries: 3 });
+    const resultPromise = provider.download().catch((e: unknown) => e);
+    await jest.runAllTimersAsync();
+    const error = await resultPromise;
+    expect(error).toBeInstanceOf(CloudStorageError);
+    expect(cloudStorageMock.readFile).toHaveBeenCalledTimes(3);
+    jest.useRealTimers();
+  });
+
+  it('respects custom syncRetryDelayMs from config', async () => {
+    jest.useFakeTimers();
+    makeAvailable();
+    cloudStorageMock.exists.mockResolvedValue(true);
+    cloudStorageMock.triggerSync.mockResolvedValue(undefined);
+    cloudStorageMock.readFile
+      .mockRejectedValueOnce(new Error('not ready'))
+      .mockResolvedValueOnce(JSON.stringify(VALID_PAYLOAD));
+
+    const provider = new ICloudProvider({ syncRetryDelayMs: 500 });
+    const downloadPromise = provider.download();
+
+    // At 499ms the retry delay hasn't elapsed yet
+    await jest.advanceTimersByTimeAsync(499);
+    expect(cloudStorageMock.readFile).toHaveBeenCalledTimes(1);
+
+    // At 500ms the delay completes and the second attempt runs
+    await jest.advanceTimersByTimeAsync(1);
+
+    const result = await downloadPromise;
+    expect(result).not.toBeNull();
+    expect(cloudStorageMock.readFile).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
   });
 
   it('throws CloudUnavailableError when iCloud is unavailable', async () => {

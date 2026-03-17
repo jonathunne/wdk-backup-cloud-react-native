@@ -15,5 +15,8 @@ export const CloudStorage = {
   readFile: jest.fn<Promise<string>, [string, CloudStorageScope?]>(),
   exists: jest.fn<Promise<boolean>, [string, CloudStorageScope?]>(),
   unlink: jest.fn<Promise<void>, [string, CloudStorageScope?]>(),
+  triggerSync: jest.fn<Promise<void>, [string, CloudStorageScope?]>(),
+  readdir: jest.fn<Promise<string[]>, [string, CloudStorageScope?]>(),
+  stat: jest.fn<Promise<Record<string, unknown>>, [string, CloudStorageScope?]>(),
   setProviderOptions: jest.fn<void, [Record<string, unknown>]>(),
 };

@@ -41,6 +41,8 @@ import type {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_FILE_PATH = "wallet_backup_key.json";
+const DEFAULT_MAX_SYNC_RETRIES = 10;
+const DEFAULT_SYNC_RETRY_DELAY_MS = 1000;
 
 // ---------------------------------------------------------------------------
 // Implementation
@@ -49,10 +51,14 @@ const DEFAULT_FILE_PATH = "wallet_backup_key.json";
 export class ICloudProvider implements CloudProvider {
   private readonly filePath: string;
   private readonly cloudEmail: string;
+  private readonly maxSyncRetries: number;
+  private readonly syncRetryDelayMs: number;
 
   constructor(config: ICloudConfig = {}) {
     this.filePath = config.filePath ?? DEFAULT_FILE_PATH;
     this.cloudEmail = config.cloudEmail ?? "";
+    this.maxSyncRetries = config.maxSyncRetries ?? DEFAULT_MAX_SYNC_RETRIES;
+    this.syncRetryDelayMs = config.syncRetryDelayMs ?? DEFAULT_SYNC_RETRY_DELAY_MS;
   }
 
   // -------------------------------------------------------------------------
@@ -108,14 +114,38 @@ export class ICloudProvider implements CloudProvider {
     const available = await this.isFileAvailable();
     if (!available) return null;
 
-    let raw: string;
     try {
-      raw = await CloudStorage.readFile(
+      await CloudStorage.triggerSync(
         this.filePath,
         CloudStorageScope.AppData,
       );
-    } catch (cause) {
-      throw this.mapError(cause, "Failed to read backup from iCloud");
+    } catch {
+      // triggerSync may fail if the file is already local; safe to ignore
+    }
+
+    let raw: string | undefined;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= this.maxSyncRetries; attempt++) {
+      try {
+        raw = await CloudStorage.readFile(
+          this.filePath,
+          CloudStorageScope.AppData,
+        );
+        break;
+      } catch (cause) {
+        lastError = cause;
+        if (attempt < this.maxSyncRetries) {
+          await new Promise((r) => setTimeout(r, this.syncRetryDelayMs));
+        }
+      }
+    }
+
+    if (raw === undefined) {
+      throw this.mapError(
+        lastError,
+        `Failed to read backup from iCloud after ${this.maxSyncRetries} attempts (file may still be downloading)`,
+      );
     }
 
     const payload = this.parsePayload(raw);

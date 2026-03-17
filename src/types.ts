@@ -86,6 +86,10 @@ export interface ICloudConfig {
   readonly filePath?: string;
   /** The user's cloud email — stored inside the backup file for traceability. */
   readonly cloudEmail?: string;
+  /** Max number of readFile retries after triggerSync during download. Default: `10` */
+  readonly maxSyncRetries?: number;
+  /** Delay in ms between readFile retries during download. Default: `1000` */
+  readonly syncRetryDelayMs?: number;
 }
 
 // ---------------------------------------------------------------------------
