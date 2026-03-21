@@ -20,9 +20,9 @@ Fixes:
 ## How Has This Been Tested?
 <!-- Describe the checks you ran locally or in CI. -->
 
-- [ ] `yarn lint`
-- [ ] `yarn test`
-- [ ] `yarn build`
+- [ ] `npm run lint`
+- [ ] `npm test`
+- [ ] `npm run build`
 
 ## Checklist
 

@@ -16,26 +16,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "yarn"
+          cache: "npm"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Use Yarn 1.22.22
-        run: corepack prepare yarn@1.22.22 --activate
-
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: npm ci
 
       - name: Lint
-        run: yarn lint
+        run: npm run lint
 
       - name: Test
-        run: yarn test --runInBand
+        run: npm test -- --runInBand
 
       - name: Build
-        run: yarn build
+        run: npm run build
 
   publish:
     needs: pre-publish-checks
@@ -50,20 +44,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "yarn"
+          cache: "npm"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Use Yarn 1.22.22
-        run: corepack prepare yarn@1.22.22 --activate
-
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: npm ci
 
       - name: Build
-        run: yarn build
+        run: npm run build
 
       - name: Publish to npm
         run: npm publish --access public
