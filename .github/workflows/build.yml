@@ -5,35 +5,23 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
-  workflow_dispatch:
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    name: Lint
+    steps:
+      - uses: tetherto/oss-actions/node-base@v1
+      - run: npm run lint
+  test:
+    runs-on: ubuntu-latest
+    name: Test
+    steps:
+      - uses: tetherto/oss-actions/node-base@v1
+      - run: npm test
   build:
     runs-on: ubuntu-latest
-
+    name: Build
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "yarn"
-
-      - name: Enable Corepack
-        run: corepack enable
-
-      - name: Use Yarn 1.22.22
-        run: corepack prepare yarn@1.22.22 --activate
-
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-
-      - name: Lint
-        run: yarn lint
-
-      - name: Test
-        run: yarn test --runInBand
-
-      - name: Build
-        run: yarn build
+      - uses: tetherto/oss-actions/node-base@v1
+      - run: npm run build
