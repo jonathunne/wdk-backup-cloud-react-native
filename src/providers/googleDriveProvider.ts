@@ -42,6 +42,7 @@ import type {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_FILE_PATH = "wallet_backup_key.json";
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Implementation
@@ -57,6 +58,7 @@ export class GoogleDriveProvider implements CloudProvider {
 
     CloudStorage.setProviderOptions({
       accessToken: config.accessToken,
+      timeout: config.timeout ?? DEFAULT_TIMEOUT_MS,
     });
   }
 
@@ -198,7 +200,8 @@ export class GoogleDriveProvider implements CloudProvider {
       msg.includes("unauthorized") ||
       msg.includes("401") ||
       msg.includes("403") ||
-      msg.includes("auth")
+      msg.includes("auth") ||
+      msg.includes("unauthenticated")
     ) {
       return new CloudAuthError(
         `Google Drive authentication failed — ${context}`,
@@ -213,6 +216,13 @@ export class GoogleDriveProvider implements CloudProvider {
     ) {
       return new CloudUnavailableError(
         `Google Drive unavailable — ${context}`,
+        cause,
+      );
+    }
+
+    if (msg.includes("400") || msg.includes("malformed")) {
+      return new CloudStorageError(
+        `Google Drive rejected the request (400 Bad Request) — ${context}: ${msg}`,
         cause,
       );
     }

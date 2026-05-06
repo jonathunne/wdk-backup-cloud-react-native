@@ -43,10 +43,11 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('GoogleDriveProvider — constructor', () => {
-  it('sets provider options with access token', () => {
+  it('sets provider options with access token and default timeout', () => {
     makeProvider();
     expect(cloudStorageMock.setProviderOptions).toHaveBeenCalledWith({
       accessToken: ACCESS_TOKEN,
+      timeout: 30_000,
     });
   });
 });

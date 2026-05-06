@@ -76,6 +76,8 @@ export interface GoogleDriveConfig {
   readonly filePath?: string;
   /** The user's cloud email — stored inside the backup file for traceability. */
   readonly cloudEmail?: string;
+  /** Network timeout in milliseconds for Google Drive API calls. Default: 30000 */
+  readonly timeout?: number;
 }
 
 /**
@@ -109,7 +111,10 @@ export interface CloudEncryptionKeyFile {
   readonly platform: "ios" | "android";
   /** Schema version */
   readonly version: number;
-  /** Cloud user email that owns this backup */
+  /** Cloud user email that owns this backup
+   * For Android, this is the email of the Google account used for the backup
+   * For iOS, this is the email of the wallet account used to sign in the app (eg. Tether account email)
+   */
   readonly cloudEmail: string;
 }
 
